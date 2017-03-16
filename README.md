@@ -12,6 +12,6 @@ This is a script for updating the (arch linux) pacman mirrorlist.
 
 ```sh
 git clone https://gitlab.com/xaverdh/mirrorupdate
-cd mirrorupdate && ghc -O2 -j$(nproc) -o mirror-update Main.hs
+cd mirror-update && cabal install --ghc-options="-O2 -j$(nproc)"
 ```
 
