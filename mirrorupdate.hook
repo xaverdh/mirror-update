@@ -1,0 +1,10 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = pacman-mirrorlist
+
+[Action]
+Description = updating mirrorlist
+When = PostTransaction
+Exec = /usr/bin/mirror-update "Germany" "Austria" "France"
