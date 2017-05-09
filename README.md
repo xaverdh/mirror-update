@@ -29,3 +29,13 @@ and the "mirror-update.hook" file in "/etc/pacman.d/hooks/".
 
 You also want to adjust the list of countries in the
 mirror-update.hook file to suit your needs.
+
+
+## Legal
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    any later version.
+    
+    See LICENSE for more details.
+
