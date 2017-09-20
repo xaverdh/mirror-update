@@ -1,37 +1,32 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Mirrorlist.UnParser where
 
 import Mirrorlist.Format
 import Data.List (intercalate)
+import Data.Semigroup
 
-unparse :: String -> String -> Mirrorlist -> String
-unparse countryPrefix serverPrefix (Mirrorlist {
-    header = header,
-    countryBlocks = blks
-  }) = intercalate "\n"
-    $ header ++ map unparseBlk blks
-  where
-    unparseBlk :: CountryBlock -> String
-    unparseBlk (CountryBlock {
-        name = name,
-        servers = servers
-      }) = intercalate "\n"
-        $ (countryPrefix ++ name) : map unparseServer servers
-    
-    unparseServer :: Url -> String
-    unparseServer = ((serverPrefix ++ "Server = ")++) . getUrl
+class HaveParserConfig where
+  countryPrefix :: String
+  serverPrefix :: String
+
+class HaveParserConfig => UnParse a where
+  unparse :: a -> String
+
+instance HaveParserConfig => UnParse Mirrorlist where
+  unparse mlist = 
+    intercalate "\n" $ ( header mlist )
+    <> ( unparse <$> countryBlocks mlist )
+
+instance HaveParserConfig => UnParse CountryBlock where
+  unparse blk =
+    intercalate "\n" $ ( countryPrefix <> name blk )
+    : ( urlToServer . unparse <$> servers blk )
+
+urlToServer :: HaveParserConfig => String -> String
+urlToServer s = serverPrefix <> "Server = " <> s
+
+instance HaveParserConfig => UnParse Url where
+  unparse = getUrl
 
 
-toStrings :: String -> String -> Mirrorlist -> [String]
-toStrings countryPrefix serverPrefix (Mirrorlist {
-    header = header,
-    countryBlocks = blks
-  }) = header ++ (blks >>= unparseBlk)
-  where
-    unparseBlk :: CountryBlock -> [String]
-    unparseBlk (CountryBlock {
-        name = name,
-        servers = servers
-      }) = (countryPrefix ++ name) : map unparseServer servers
-    
-    unparseServer :: Url -> String
-    unparseServer = ((serverPrefix ++ "Server = ")++) . getUrl
+

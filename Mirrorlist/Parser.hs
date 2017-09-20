@@ -6,68 +6,84 @@ module Mirrorlist.Parser where
   -}
 
 import Mirrorlist.Format
-import Text.Parsec hiding (space,spaces)
-import Data.Maybe (maybeToList)
+
+import Text.Parser.Char hiding (space,spaces)
+import Text.Parser.Combinators
+import Text.Parser.LookAhead
+import Data.Maybe (fromMaybe)
+import Data.Semigroup
 import Data.Char
+import Data.Functor
+import Control.Applicative
 
-mirrorlist :: Parsec String () Mirrorlist
-mirrorlist =
-  let discard = emptyLines
-  in do
-    header <- mirrorlistHeader
-    blocks <- many $ discard *> try countryBlock <* discard
-    eof
-    return $ Mirrorlist header blocks
 
+mirrorlist :: (Monad m,CharParsing m,LookAheadParsing m)
+  => m Mirrorlist
+mirrorlist = Mirrorlist
+  <$> mirrorlistHeader
+  <*> (blocks <* eof)
+  where
+    blocks = many $ discard *> try countryBlock <* discard
+    discard = emptyLines
+
+mirrorlistHeader :: (CharParsing m,LookAheadParsing m)
+  => m [String]
 mirrorlistHeader =
   try (manyTill anyChar eol)
   `manyTill` try (lookAhead countryBlock)
 
-countryBlock = do
-  name <- country
-  urls <- many1 $ try server
-  return $ CountryBlock name urls
+countryBlock :: CharParsing m => m CountryBlock
+countryBlock = CountryBlock
+  <$> country
+  <*> some (try server)
 
-country =
-  let
-    prefix = do
-      many $ char '#'
-      spaces
-  in prefix *> manyTill anyChar eol <?> "<country name>"
 
-server = 
-  let
-    prefix = do
-      many $ char '#'
-      spaces
-      string "Server"
-      spaces
-      char '='
-      spaces
-  in prefix *> url <?> "Server = <server url>"
+country :: CharParsing m => m String
+country = 
+  prefix *> manyTill anyChar eol <?> "<country name>"
+  where
+    prefix = skipMany (char '#') *> spaces
 
-url = do
-  string "http"
-  s <- optionMaybe $ char 's'
-  string "://" 
-  rest <- manyTill anyChar eol
-  return . Url $ "http" ++ maybeToList s ++ "://" ++ rest
+server :: CharParsing m => m Url
+server = prefix *> url <?> "Server = <server url>"
+  where
+    prefix =
+      skipMany ( char '#' )
+      *> spaces
+      *> string "Server"
+      *> spaces
+      *> char '='
+      *> spaces $> ()
 
-eol = endOfLine <?> "end of line"
+url :: CharParsing m => m Url
+url = Url
+  <$> ( pure "http" <++> secure
+        <++> pure "://" <++> manyTill anyChar eol )
+  where
+    (<++>) = liftA2 (<>)
+    secure :: CharParsing m => m String
+    secure = (char 's' $> "s") <|> pure ""
 
+eol :: CharParsing m => m ()
+eol = skipOptional (char '\r') *> newline $> () <?> "end of line"
+
+space :: CharParsing m => m ()
 space = satisfy (
     (&&) <$> isSpace <*> (not . isControl)
-  ) <?> "space"
+  ) $> () <?> "space"
 
-spaces = many space
+spaces :: CharParsing m => m ()
+spaces = skipMany space
 
+emptyLine :: CharParsing m => m ()
 emptyLine =
-  optional (char '#')
-  >> optional (char '#')
-  >> many space
-  >> eol <?> "empty line"
+  skipOptional (char '#')
+  *> skipOptional (char '#')
+  *> spaces
+  *> eol <?> "empty line"
 
-emptyLines = many $ try emptyLine
+emptyLines :: CharParsing m => m ()
+emptyLines = skipMany $ try emptyLine
 
 
 

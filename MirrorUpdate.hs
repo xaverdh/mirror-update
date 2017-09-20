@@ -1,25 +1,29 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings #-}
--- GADTs #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module MirrorUpdate where
 
 import Mirrorlist.Format
 import Mirrorlist.Parser
 import Mirrorlist.UnParser
 
-import Text.Parsec (parse)
-import Data.List (intercalate)
-import Data.Char (isSpace)
-import Data.Text (pack)
+import Data.Attoparsec.ByteString (parseOnly,endOfInput)
+import qualified Data.ByteString as BS
 
-import System.Environment (getArgs)
 import System.Directory
 import System.FilePath
 import System.IO
+import System.IO.Temp
 import System.Process
 
 import Control.Monad
 import Control.Monad.Reader
 
+parseMirrorlist :: BS.ByteString -> Either String Mirrorlist
+parseMirrorlist = parseOnly (mirrorlist <* endOfInput)
+
+instance HaveParserConfig where
+  countryPrefix = "# "  
+  serverPrefix = ""
 
 data Config = 
   Config {
@@ -30,15 +34,14 @@ data Config =
     allowedCountries :: [String]
   }
 
-mkDefaultConfig countries =
-  let
-    dir = "/etc/pacman.d"
-  in Config
-    dir
-    (dir </> "mirrorlist")
-    (dir </> "mirrorlist.pacnew")
-    (dir </> "mirrorlist.backup")
-    countries
+
+mkConfig :: FilePath -> FilePath -> [String] -> Config
+mkConfig mldir bakPath countries = Config
+  mldir
+  ( mldir </> "mirrorlist" )
+  ( mldir </> "mirrorlist" <.> "pacnew" )
+  bakPath
+  countries
 
 assertPerms :: ReaderT Config IO Bool
 assertPerms = do
@@ -51,32 +54,25 @@ assertPerms = do
       perms <- getPermissions p
       pure $ readable perms && writable perms
 
-getConf :: IO Config
-getConf = do
-  countries <- getArgs
-  pure $ mkDefaultConfig countries
 
 getMirrors :: ReaderT Config IO String
 getMirrors = do
-  pacnew <- (liftIO . readFile) =<< asks pacnewPath
+  pacnew <- (liftIO . BS.readFile) =<< asks pacnewPath
   allowed <- asks allowedCountries
   path <- asks mlistPath
   pure
-    $ unparse "# " ""
+    $ unparse
     . filterCountries allowed
     . either (error . show) id
-    . parse mirrorlist path
+    . parseMirrorlist
     $ pacnew
 
 rankMirrors :: String -> IO String
 rankMirrors mlist = do
-  (fp,fh) <- openTempFile "/tmp" "mirror-update"
-  hPutStr fh mlist
-  hClose fh
-  r <- readProcess "/usr/bin/rankmirrors" ["-n","8",fp] ""
-  removeFile fp
-  pure r
-
+  withSystemTempFile "mirror-update" $ \fp fh -> do
+    hPutStr fh mlist
+    hClose fh
+    readProcess "/usr/bin/rankmirrors" ["-n","8",fp] ""
 
 
 writeMirrors :: String -> ReaderT Config IO ()
@@ -87,7 +83,7 @@ writeMirrors = \case
     mp <- asks mlistPath
     liftIO
       $ copyFile mp bp
-      >> writeFile mp mirrors  
+      *> writeFile mp mirrors  
 
 updateMirrorlist :: ReaderT Config IO ()
 updateMirrorlist =
@@ -97,13 +93,5 @@ updateMirrorlist =
       >>= liftIO . rankMirrors
       >>= writeMirrors 
     False -> error "Insufficient Privileges; are you root ?"
-
-
-{-
-  TODO:
-  allow config to be set from calling scipt,
-  by passing command line arguments.
-  -}
-
 
 
