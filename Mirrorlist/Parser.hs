@@ -57,8 +57,8 @@ server = prefix *> url <?> "Server = <server url>"
 
 url :: CharParsing m => m Url
 url = Url
-  <$> ( pure "http" <++> secure
-        <++> pure "://" <++> manyTill anyChar eol )
+  <$> ( string "http" <++> secure
+        <++> string "://" <++> manyTill anyChar eol )
   where
     (<++>) = liftA2 (<>)
     secure :: CharParsing m => m String
